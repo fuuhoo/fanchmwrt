@@ -1,0 +1,129 @@
+name: Build ucode packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'ci/ucode-ubus-proto-leak'
+    tags:
+      - 'v*-ucode'
+    paths:
+      - 'package/utils/ucode/**'
+      - '.github/workflows/build-ucode-packages.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TARGET: qualcommax
+  SUBTARGET: ipq60xx
+  RELEASE: '25.12.6'
+  TOOLCHAIN_FILE: openwrt-toolchain-25.12.6-qualcommax-ipq60xx_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+  ARCH_PACKAGES: aarch64_cortex-a53
+
+jobs:
+  build:
+    name: Build ucode for ${{ github.ref_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gawk gettext git libncurses-dev libssl-dev \
+            python3 python3-dev rsync subversion unzip wget xsltproc \
+            zlib1g-dev zstd cmake ninja-build pkg-config bison flex \
+            libelf-dev liblzma-dev libbz2-dev libarchive-dev libcurl4-openssl-dev \
+            bc cpio file quilt autoconf automake libtool-bin swig time
+
+      - name: Download external toolchain
+        run: |
+          BASE="https://downloads.openwrt.org/releases/${RELEASE}/targets/${TARGET}/${SUBTARGET}"
+          wget -q "$BASE/$TOOLCHAIN_FILE"
+          wget -q "$BASE/sha256sums" -O /tmp/sha256sums
+          grep "$TOOLCHAIN_FILE" /tmp/sha256sums | sha256sum -c -
+          tar -xf "$TOOLCHAIN_FILE"
+          rm -f "$TOOLCHAIN_FILE"
+
+      - name: Configure target
+        run: |
+          TC_DIR="$(ls -d openwrt-toolchain-*/toolchain-* | head -n1)"
+          echo "Using toolchain $TC_DIR"
+          ./scripts/ext-toolchain.sh \
+            --toolchain "$TC_DIR" \
+            --overwrite-config \
+            --config "${TARGET}/${SUBTARGET}"
+          cat >> .config <<'EOF'
+          CONFIG_PACKAGE_libjson-c=y
+          CONFIG_PACKAGE_libubox=y
+          CONFIG_PACKAGE_libblobmsg-json=y
+          CONFIG_PACKAGE_libubus=y
+          CONFIG_PACKAGE_libucode=y
+          CONFIG_PACKAGE_ucode=y
+          CONFIG_PACKAGE_ucode-mod-ubus=y
+          EOF
+          make defconfig
+          grep -E 'CONFIG_PACKAGE_(ucode|libucode|libubus|libubox|libblobmsg-json)=' .config
+
+      # elfutils 0.192 does not build against the newer glibc/gcc used by
+      # GitHub runners and is only needed by tools/dwarves (CONFIG_DWARVES).
+      - name: Skip unneeded elfutils host tool
+        run: sed -i 's/^tools-y += elfutils$/# tools-y += elfutils/' tools/Makefile
+
+      - name: Build host tools
+        run: make tools/install -j"$(nproc)" BUILD_LOG=1
+
+      - name: Set up external toolchain staging
+        run: make toolchain/install -j"$(nproc)" BUILD_LOG=1
+
+      # Build the dependency chain explicitly: package DEPENDS are runtime
+      # relations, only PKG_BUILD_DEPENDS pull prerequisites automatically.
+      - name: Build libjson-c
+        run: make package/libs/libjson-c/compile -j"$(nproc)" BUILD_LOG=1
+
+      - name: Build libubox
+        run: make package/libs/libubox/compile -j"$(nproc)" BUILD_LOG=1
+
+      - name: Build ubus
+        run: make package/system/ubus/compile -j"$(nproc)" BUILD_LOG=1
+
+      - name: Build ucode
+        run: make package/utils/ucode/compile -j"$(nproc)" BUILD_LOG=1
+
+      - name: Collect packages
+        run: |
+          mkdir -p out
+          find bin/packages -name '*.apk' -exec cp -v {} out/ \;
+          ls -l out
+          test -n "$(ls -A out)"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ucode-apk-${{ env.ARCH_PACKAGES }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: out/*
+          body: |
+            ucode / ubus packages built from ${{ github.sha }} with the
+            per-call ubus request prototype leak fix backported.
+
+            Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
+            (${{ env.ARCH_PACKAGES }}), OpenWrt ${{ env.RELEASE }}.
+          draft: true
+          prerelease: true
