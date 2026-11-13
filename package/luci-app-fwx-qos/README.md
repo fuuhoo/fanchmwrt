@@ -11,6 +11,32 @@
 
 ## 安装
 
+### 方式一：apk 包（推荐）
+
+包是 apk v3（ADB）格式，不需要完整编译固件：
+
+```
+pscp -scp -pw '<路由器密码>' -hostkey 'SHA256:RRJa7Ps8c59eKIgyUk04qEQPwUw2i2x32ybmFSrSDIs' luci-app-fwx-qos-1.0-r2.apk root@192.168.0.1:/tmp/
+```
+
+然后在路由器上：
+
+```
+apk add --allow-untrusted /tmp/luci-app-fwx-qos-1.0-r2.apk
+```
+
+安装脚本会自动启用并启动服务、清理 LuCI 缓存、重启 rpcd。
+
+> 新增 rpcd 权限组后，**旧登录会话会 403，需要退出重新登录一次**。
+
+自己打包：
+
+```
+APK=/path/to/apk.static ./build-apk.sh [输出目录]
+```
+
+### 方式二：手动拷贝文件
+
 在 Windows 上执行（替换 `<路由器密码>`）：
 
 ```
@@ -36,7 +62,7 @@ EOF
 /etc/init.d/fwx-qos restart
 ```
 
-页面入口：**系统 → 带宽限速**（`http://192.168.0.1/cgi-bin/luci/admin/system/fwx_qos`）。
+页面入口：**服务 → 带宽限速**（`http://192.168.0.1/cgi-bin/luci/admin/services/fwx_qos`）。
 
 > 注意：ash 是边读边执行脚本的，**覆盖 `/usr/sbin/fwx-qos-gen` 后必须 `/etc/init.d/fwx-qos restart`**，
 > 否则正在运行的 watch 进程会按旧文件偏移继续执行，生成空规则。
@@ -48,6 +74,15 @@ EOF
 3. 点「保存并应用」，页面下方「当前生效规则」会显示真实 nft 规则和丢包计数
 
 单位是 KB/s（1 KB = 1000 字节，与 nft 的 kbytes 一致）。实测：设 2048 KB/s，实测 1.97 MB/s，误差约 1.4%。
+
+## 移动端适配
+
+页面在竖屏手机（320 / 360 / 390 px 宽）下做了适配，实测无横向溢出：
+
+- 规则表格在窄屏下转成「每条规则一张卡片」，每行左侧显示字段名（名称 / MAC / IPv4 / 下行 / 上行 / 启用），右侧是输入框
+- 「从在线设备添加」的标签、下拉框、「添加」按钮在窄屏下各占一行
+- 「保存并应用」按钮占满整行，保存结果提示换行显示在按钮下方
+- 说明段落、规则输出框（`<pre>`）在窄屏下自动换行 / 横向滚动，不再被裁掉
 
 ## 工作原理
 
@@ -95,6 +130,14 @@ config rule 'rule_1'
 ```
 
 ## 卸载
+
+用 apk 安装的：
+
+```
+apk del luci-app-fwx-qos
+```
+
+手动安装的：
 
 ```
 /etc/init.d/fwx-qos stop

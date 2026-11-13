@@ -13,6 +13,29 @@
 .qos-hint { color:#6b7280; font-size:13px; line-height:1.7; }
 .qos-msg { margin-left:10px; }
 .qos-pre { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:6px; overflow:auto; max-height:320px; font-size:12px; }
+.qos-select { min-width:280px; max-width:100%; }
+@media (max-width: 640px) {
+	.qos-select { width:100%; min-width:0; }
+	.fwx-form-card { width:100%; max-width:100vw; box-sizing:border-box; padding:12px; }
+	.form-desc { overflow-wrap:anywhere; word-break:break-word; }
+	.qos-row-stack { flex-wrap:wrap; }
+	.qos-row-stack .form-label { width:100%; margin-bottom:2px; }
+	.qos-row-stack select, .qos-row-stack button { width:100%; max-width:100%; }
+	.qos-table, .qos-table tbody, .qos-table tr, .qos-table td { display:block; width:100%; }
+	.qos-table thead { display:none; }
+	.qos-table tr { border:1px solid #e5e7eb; border-radius:8px; margin:0 0 12px; padding:4px 12px; background:#fff; }
+	.qos-table td { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px dashed #eee; }
+	.qos-table tr td:last-child { border-bottom:0; }
+	.qos-table td::before { content:attr(data-label); flex:0 0 38%; color:#6b7280; font-size:13px; }
+	.qos-table td.qos-act { justify-content:flex-end; }
+	.qos-table td.qos-act::before { content:""; flex:0; }
+	.qos-table input[type=text], .qos-table input[type=number] { flex:1 1 55%; width:auto; max-width:60%; min-width:0; }
+	.qos-btn { width:100%; }
+	.qos-save-row { flex-wrap:wrap; }
+	.qos-save-row .qos-btn { flex:1 1 100%; }
+	.qos-save-row .qos-msg { margin-left:0; flex:1 1 100%; }
+	.qos-pre { max-height:220px; font-size:11px; }
+}
 </style>
 
 <div class="fwx-form-card">
@@ -30,9 +53,9 @@
     </label>
   </div>
 
-  <div class="form-row">
+  <div class="form-row qos-row-stack">
     <label class="form-label" for="qos-client">从在线设备添加</label>
-    <select id="qos-client" style="min-width:280px">
+    <select id="qos-client" class="qos-select">
       <option value="">-- 请选择设备 --</option>
     </select>
     <button class="cbi-button qos-btn" id="qos-add" type="button">添加</button>
@@ -53,7 +76,7 @@
     <tbody id="qos-rows"></tbody>
   </table>
 
-  <div class="form-row">
+  <div class="form-row qos-save-row">
     <button class="cbi-button cbi-button-apply qos-btn" id="qos-save" type="button">保存并应用</button>
     <span class="qos-msg" id="qos-msg"></span>
   </div>
@@ -105,13 +128,13 @@
     tb.empty();
     rules.forEach(function(r, idx) {
       var tr = $('<tr>');
-      tr.append($('<td>').append($('<input type="text">').attr('data-f', 'name').val(r.name)));
-      tr.append($('<td>').append($('<input type="text">').attr('data-f', 'mac').val(r.mac)));
-      tr.append($('<td>').append($('<input type="text">').attr('data-f', 'ipv4').val(r.ipv4)));
-      tr.append($('<td>').append($('<input type="number" min="0" step="1">').attr('data-f', 'download').val(r.download)));
-      tr.append($('<td>').append($('<input type="number" min="0" step="1">').attr('data-f', 'upload').val(r.upload)));
-      tr.append($('<td>').append($('<input type="checkbox">').attr('data-f', 'enabled').prop('checked', !!r.enabled)));
-      tr.append($('<td>').attr('class', 'qos-act').append(
+      tr.append($('<td>').attr('data-label', '名称').append($('<input type="text">').attr('data-f', 'name').val(r.name)));
+      tr.append($('<td>').attr('data-label', 'MAC').append($('<input type="text">').attr('data-f', 'mac').val(r.mac)));
+      tr.append($('<td>').attr('data-label', 'IPv4').append($('<input type="text">').attr('data-f', 'ipv4').val(r.ipv4)));
+      tr.append($('<td>').attr('data-label', '下行 KB/s').append($('<input type="number" min="0" step="1">').attr('data-f', 'download').val(r.download)));
+      tr.append($('<td>').attr('data-label', '上行 KB/s').append($('<input type="number" min="0" step="1">').attr('data-f', 'upload').val(r.upload)));
+      tr.append($('<td>').attr('data-label', '启用').append($('<input type="checkbox">').attr('data-f', 'enabled').prop('checked', !!r.enabled)));
+      tr.append($('<td>').attr('class', 'qos-act').attr('data-label', '').append(
         $('<button class="cbi-button cbi-button-remove qos-btn" type="button">').text('删除')));
       tr.find('button').on('click', function() {
         rules.splice(idx, 1);

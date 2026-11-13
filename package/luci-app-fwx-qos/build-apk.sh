@@ -14,7 +14,7 @@
 set -e
 
 PKG="luci-app-fwx-qos"
-VERSION="1.0-r1"
+VERSION="1.0-r2"
 PKGARCH="noarch"
 LICENSE="MIT"
 DESCRIPTION="FanchmWrt per-device bandwidth limit (nftables limit)"
