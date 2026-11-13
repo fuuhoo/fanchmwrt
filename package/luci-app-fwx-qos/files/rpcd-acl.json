@@ -1,0 +1,11 @@
+{
+	"luci-app-fwx-qos": {
+		"description": "Grant access to the FanchmWrt bandwidth limit configuration",
+		"read": {
+			"uci": [ "fwx_qos" ]
+		},
+		"write": {
+			"uci": [ "fwx_qos" ]
+		}
+	}
+}

@@ -66,9 +66,9 @@
 
 <script>
 (function() {
-  var list_url = '<%=url("admin/system/fwx_qos_list")%>';
-  var save_url = '<%=url("admin/system/fwx_qos_save")%>';
-  var status_url = '<%=url("admin/system/fwx_qos_status")%>';
+  var list_url = '<%=url("admin/services/fwx_qos_list")%>';
+  var save_url = '<%=url("admin/services/fwx_qos_save")%>';
+  var status_url = '<%=url("admin/services/fwx_qos_status")%>';
   var token = <%=json.stringify(luci.dispatcher.context.authtoken or "")%>;
 
   var rules = [];

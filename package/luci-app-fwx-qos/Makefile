@@ -51,6 +51,10 @@ define Package/luci-app-fwx-qos/install
 	$(INSTALL_BIN) ./files/fwx-qos.init $(1)/etc/init.d/fwx-qos
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/fwx_qos.config $(1)/etc/config/fwx_qos
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./files/luci-app-fwx-qos.json $(1)/usr/share/luci/menu.d/luci-app-fwx-qos.json
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./files/rpcd-acl.json $(1)/usr/share/rpcd/acl.d/luci-app-fwx-qos.json
 endef
 
 define Package/luci-app-fwx-qos/postinst
@@ -60,6 +64,7 @@ define Package/luci-app-fwx-qos/postinst
 /etc/init.d/fwx-qos restart
 rm -f /tmp/luci-indexcache
 rm -rf /tmp/luci-modulecache/*
+/etc/init.d/rpcd restart >/dev/null 2>&1
 exit 0
 endef
 

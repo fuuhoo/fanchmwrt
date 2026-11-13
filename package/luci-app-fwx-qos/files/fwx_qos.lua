@@ -95,10 +95,10 @@ local function load_clients()
 end
 
 function index()
-	entry({ "admin", "system", "fwx_qos" }, template("fwx_qos/qos"), translate("Bandwidth Limit"), 60)
-	entry({ "admin", "system", "fwx_qos_list" }, call("api_list")).leaf = true
-	entry({ "admin", "system", "fwx_qos_save" }, post("api_save")).leaf = true
-	entry({ "admin", "system", "fwx_qos_status" }, call("api_status")).leaf = true
+	entry({ "admin", "services", "fwx_qos" }, template("fwx_qos/qos"), translate("Bandwidth Limit"), 35)
+	entry({ "admin", "services", "fwx_qos_list" }, call("api_list")).leaf = true
+	entry({ "admin", "services", "fwx_qos_save" }, post("api_save")).leaf = true
+	entry({ "admin", "services", "fwx_qos_status" }, call("api_status")).leaf = true
 end
 
 function api_list()

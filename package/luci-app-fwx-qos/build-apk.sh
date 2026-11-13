@@ -45,6 +45,8 @@ mkdir -p "$idir/usr/lib/lua/luci/controller" \
 	 "$idir/usr/sbin" \
 	 "$idir/etc/init.d" \
 	 "$idir/etc/config" \
+	 "$idir/usr/share/luci/menu.d" \
+	 "$idir/usr/share/rpcd/acl.d" \
 	 "$idir/lib/apk/packages"
 
 install -m 0644 "$files/fwx_qos.lua" "$idir/usr/lib/lua/luci/controller/fwx_qos.lua"
@@ -52,6 +54,8 @@ install -m 0644 "$files/qos.htm" "$idir/usr/lib/lua/luci/view/fwx_qos/qos.htm"
 install -m 0755 "$files/fwx-qos-gen" "$idir/usr/sbin/fwx-qos-gen"
 install -m 0755 "$files/fwx-qos.init" "$idir/etc/init.d/fwx-qos"
 install -m 0644 "$files/fwx_qos.config" "$idir/etc/config/fwx_qos"
+install -m 0644 "$files/luci-app-fwx-qos.json" "$idir/usr/share/luci/menu.d/luci-app-fwx-qos.json"
+install -m 0644 "$files/rpcd-acl.json" "$idir/usr/share/rpcd/acl.d/luci-app-fwx-qos.json"
 
 # 安装文件清单（不含 apk 自身的元数据目录）
 ( cd "$idir" && find . -type f -not -path './lib/apk/*' -printf '/%P\n' | sort ) \

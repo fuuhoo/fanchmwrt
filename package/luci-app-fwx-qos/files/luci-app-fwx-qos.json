@@ -1,0 +1,13 @@
+{
+	"admin/services/fwx_qos": {
+		"title": "带宽限速",
+		"order": 35,
+		"action": {
+			"type": "template",
+			"path": "fwx_qos/qos"
+		},
+		"depends": {
+			"acl": [ "luci-app-fwx-qos" ]
+		}
+	}
+}
