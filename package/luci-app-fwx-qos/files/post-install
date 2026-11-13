@@ -1,0 +1,10 @@
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+/etc/init.d/fwx-qos enable
+/etc/init.d/fwx-qos restart
+
+rm -f /tmp/luci-indexcache
+rm -rf /tmp/luci-modulecache/*
+
+exit 0

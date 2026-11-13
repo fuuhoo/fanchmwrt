@@ -1,0 +1,193 @@
+<%+header%>
+<% local json = require "luci.jsonc" %>
+<link rel="stylesheet" href="<%=resource%>/css/common.css?v=1.0">
+<script src="<%=resource%>/jquery-3.7.1.min.js?v=1.0"></script>
+<script src="<%=resource%>/common.js?v=1.0"></script>
+<style>
+.qos-table { width:100%; border-collapse:collapse; margin:12px 0; }
+.qos-table th, .qos-table td { padding:8px 6px; border-bottom:1px solid #e5e7eb; text-align:left; font-size:14px; }
+.qos-table th { color:#6b7280; font-weight:600; white-space:nowrap; }
+.qos-table input[type=text], .qos-table input[type=number] { width:100%; box-sizing:border-box; }
+.qos-table td.qos-act { width:64px; }
+.qos-btn { cursor:pointer; }
+.qos-hint { color:#6b7280; font-size:13px; line-height:1.7; }
+.qos-msg { margin-left:10px; }
+.qos-pre { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:6px; overflow:auto; max-height:320px; font-size:12px; }
+</style>
+
+<div class="fwx-form-card">
+  <div class="form-title">带宽限速</div>
+  <div class="form-desc qos-hint">
+    基于 nftables limit 实现每设备上下行限速，单位 KB/s（1 KB = 1000 字节）。超出速率的报文会被丢弃，因此实际速度略低于设定值；
+    下行指设备接收方向，上行指设备发送方向。IPv6 地址按 MAC 自动识别。
+  </div>
+
+  <div class="form-row">
+    <label class="form-label" for="qos-enabled">启用限速</label>
+    <label class="switch">
+      <input type="checkbox" id="qos-enabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="form-row">
+    <label class="form-label" for="qos-client">从在线设备添加</label>
+    <select id="qos-client" style="min-width:280px">
+      <option value="">-- 请选择设备 --</option>
+    </select>
+    <button class="cbi-button qos-btn" id="qos-add" type="button">添加</button>
+  </div>
+
+  <table class="qos-table">
+    <thead>
+      <tr>
+        <th style="width:22%">名称</th>
+        <th style="width:16%">MAC</th>
+        <th style="width:16%">IPv4</th>
+        <th style="width:11%">下行 KB/s</th>
+        <th style="width:11%">上行 KB/s</th>
+        <th style="width:8%">启用</th>
+        <th class="qos-act"></th>
+      </tr>
+    </thead>
+    <tbody id="qos-rows"></tbody>
+  </table>
+
+  <div class="form-row">
+    <button class="cbi-button cbi-button-apply qos-btn" id="qos-save" type="button">保存并应用</button>
+    <span class="qos-msg" id="qos-msg"></span>
+  </div>
+
+  <div class="form-row">
+    <label class="form-label">当前生效规则</label>
+  </div>
+  <pre class="qos-pre" id="qos-ruleset">--</pre>
+</div>
+
+<script>
+(function() {
+  var list_url = '<%=url("admin/system/fwx_qos_list")%>';
+  var save_url = '<%=url("admin/system/fwx_qos_save")%>';
+  var status_url = '<%=url("admin/system/fwx_qos_status")%>';
+  var token = <%=json.stringify(luci.dispatcher.context.authtoken or "")%>;
+
+  var rules = [];
+  var clients = [];
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function message(text, error) {
+    $('#qos-msg').text(text).css('color', error ? '#dc2626' : '#16a34a');
+    setTimeout(function() { $('#qos-msg').text(''); }, 4000);
+  }
+
+  function client_label(c) {
+    var parts = [];
+    parts.push(c.hostname || '(未命名)');
+    parts.push(c.mac);
+    if (c.ipv4) parts.push(c.ipv4);
+    return parts.join(' · ');
+  }
+
+  function render_picker() {
+    var sel = $('#qos-client');
+    sel.empty();
+    sel.append($('<option>').val('').text('-- 请选择设备 --'));
+    clients.forEach(function(c, i) {
+      sel.append($('<option>').val(String(i)).text(client_label(c)));
+    });
+  }
+
+  function render_rows() {
+    var tb = $('#qos-rows');
+    tb.empty();
+    rules.forEach(function(r, idx) {
+      var tr = $('<tr>');
+      tr.append($('<td>').append($('<input type="text">').attr('data-f', 'name').val(r.name)));
+      tr.append($('<td>').append($('<input type="text">').attr('data-f', 'mac').val(r.mac)));
+      tr.append($('<td>').append($('<input type="text">').attr('data-f', 'ipv4').val(r.ipv4)));
+      tr.append($('<td>').append($('<input type="number" min="0" step="1">').attr('data-f', 'download').val(r.download)));
+      tr.append($('<td>').append($('<input type="number" min="0" step="1">').attr('data-f', 'upload').val(r.upload)));
+      tr.append($('<td>').append($('<input type="checkbox">').attr('data-f', 'enabled').prop('checked', !!r.enabled)));
+      tr.append($('<td>').attr('class', 'qos-act').append(
+        $('<button class="cbi-button cbi-button-remove qos-btn" type="button">').text('删除')));
+      tr.find('button').on('click', function() {
+        rules.splice(idx, 1);
+        render_rows();
+      });
+      tb.append(tr);
+    });
+  }
+
+  function collect() {
+    var out = [];
+    $('#qos-rows tr').each(function() {
+      var r = { name: '', mac: '', ipv4: '', download: 0, upload: 0, enabled: false };
+      $(this).find('[data-f]').each(function() {
+        var f = $(this).attr('data-f');
+        if (f === 'enabled') r.enabled = $(this).prop('checked');
+        else if (f === 'download' || f === 'upload') r[f] = parseInt($(this).val() || '0', 10) || 0;
+        else r[f] = $(this).val();
+      });
+      if (r.mac || r.ipv4 || r.name) out.push(r);
+    });
+    return out;
+  }
+
+  function load_status() {
+    $.ajax({ url: status_url, dataType: 'json', cache: false, timeout: 10000 })
+      .done(function(resp) {
+        $('#qos-ruleset').text((resp && resp.ruleset) ? resp.ruleset.trim() : '--');
+      })
+      .fail(function() { $('#qos-ruleset').text('--'); });
+  }
+
+  function load() {
+    $.ajax({ url: list_url, dataType: 'json', cache: false, timeout: 10000 })
+      .done(function(resp) {
+        if (!resp) return;
+        $('#qos-enabled').prop('checked', resp.enabled === true);
+        rules = resp.rules || [];
+        clients = resp.clients || [];
+        render_picker();
+        render_rows();
+        load_status();
+      })
+      .fail(function() { message('加载失败', true); });
+  }
+
+  $('#qos-add').on('click', function() {
+    var idx = $('#qos-client').val();
+    if (idx === '' || idx === undefined) { message('请先选择设备', true); return; }
+    var c = clients[parseInt(idx, 10)];
+    if (!c) return;
+    rules.push({ name: c.hostname || c.mac, mac: c.mac, ipv4: c.ipv4 || '', download: 2048, upload: 1024, enabled: true });
+    render_rows();
+  });
+
+  $('#qos-save').on('click', function() {
+    var payload = collect();
+    $('#qos-save').prop('disabled', true);
+    $.ajax({
+      url: save_url, type: 'POST', dataType: 'json', timeout: 30000,
+      data: { rules: JSON.stringify(payload), enabled: $('#qos-enabled').prop('checked') ? '1' : '0', token: token }
+    })
+      .done(function(resp) {
+        if (resp && resp.ok) {
+          rules = resp.rules || payload;
+          render_rows();
+          message('保存成功');
+          load_status();
+        } else {
+          message('保存失败', true);
+        }
+      })
+      .fail(function() { message('保存失败', true); })
+      .always(function() { $('#qos-save').prop('disabled', false); });
+  });
+
+  load();
+})();
+</script>

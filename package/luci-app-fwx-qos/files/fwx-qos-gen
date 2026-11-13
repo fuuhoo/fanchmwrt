@@ -1,0 +1,136 @@
+#!/bin/sh
+# fwx-qos-gen - 生成并应用基于 nftables limit 的每设备限速规则
+#
+# 用法:
+#   fwx-qos-gen apply    生成规则并加载
+#   fwx-qos-gen watch    常驻，地址变化时自动重新加载
+#   fwx-qos-gen status   打印当前生效的规则与计数器
+#   fwx-qos-gen clear    清除所有限速规则
+#
+# 配置: /etc/config/fwx_qos
+#   config qos 'global'
+#       option enabled '1'
+#   config rule 'xxx'
+#       option enabled '1'
+#       option name '客厅电视'
+#       option mac 'aa:bb:cc:dd:ee:ff'
+#       option ipv4 '192.168.0.100'
+#       option download '2048'   # 下行 KB/s (千字节), 0 = 不限
+#       option upload '1024'     # 上行 KB/s, 0 = 不限
+
+CONF="fwx_qos"
+RULES="/etc/fwx-qos.nft"
+TABLE="inet fwx_qos"
+REFRESH="${FWX_QOS_REFRESH:-60}"
+
+log() {
+	logger -t fwx-qos "$*"
+}
+
+# 限速规则的 nft 语法: 设备收包(daddr)为下行, 设备发包(saddr)为上行
+emit_limit() {
+	family="$1"
+	addr="$2"
+	rate="$3"
+	dir="$4"
+	[ -n "$addr" ] || return 0
+	[ "$rate" -gt 0 ] 2>/dev/null || return 0
+	burst=$((rate / 4))
+	[ "$burst" -lt 32 ] && burst=32
+	echo "		$family $dir $addr limit rate over ${rate} kbytes/second burst ${burst} kbytes counter drop"
+}
+
+# 解析设备当前持有的 IPv6 地址(按 MAC 查邻居表)
+resolve_ipv6() {
+	mac=$(echo "$1" | tr 'A-Z' 'a-z')
+	[ -n "$mac" ] || return 0
+	ip -6 neigh show 2>/dev/null | awk -v m="$mac" '
+		{
+			mac = ""
+			for (i = 1; i <= NF; i++)
+				if ($i == "lladdr") mac = tolower($(i + 1))
+			if (mac == m && $1 ~ /:/ && $1 !~ /^fe80:/ && $1 !~ /^ff/) print $1
+		}'
+}
+
+generate() {
+	echo "table inet fwx_qos {"
+	echo "	chain forward {"
+	echo "		type filter hook forward priority -1; policy accept;"
+
+	enabled=$(uci -q get "$CONF.global.enabled" 2>/dev/null)
+	[ "$enabled" = "1" ] || { echo "	}"; echo "}"; return 0; }
+
+	for section in $(uci -q show "$CONF" 2>/dev/null | sed -n "s/^$CONF\.\(.*\)=rule$/\1/p"); do
+		rule_enabled=$(uci -q get "$CONF.$section.enabled" 2>/dev/null)
+		[ "$rule_enabled" = "1" ] || continue
+
+		name=$(uci -q get "$CONF.$section.name" 2>/dev/null)
+		mac=$(uci -q get "$CONF.$section.mac" 2>/dev/null)
+		down=$(uci -q get "$CONF.$section.download" 2>/dev/null)
+		up=$(uci -q get "$CONF.$section.upload" 2>/dev/null)
+		[ -z "$down" ] && down=0
+		[ -z "$up" ] && up=0
+
+		echo "		# ${name:-rule} ${mac}"
+		for ipv4 in $(uci -q get "$CONF.$section.ipv4" 2>/dev/null | tr ', ' '\n\n' | grep -v '^$'); do
+			emit_limit ip "$ipv4" "$down" daddr
+			emit_limit ip "$ipv4" "$up" saddr
+		done
+		for ipv6 in $(resolve_ipv6 "$mac"); do
+			emit_limit ip6 "$ipv6" "$down" daddr
+			emit_limit ip6 "$ipv6" "$up" saddr
+		done
+	done
+
+	echo "	}"
+	echo "}"
+}
+
+apply_rules() {
+	generate > "$RULES.tmp" 2>/dev/null || return 1
+	if ! nft -c -f "$RULES.tmp" >/dev/null 2>&1; then
+		log "生成的规则语法校验失败, 保留原有规则"
+		rm -f "$RULES.tmp"
+		return 1
+	fi
+	mv "$RULES.tmp" "$RULES"
+	nft delete table inet fwx_qos 2>/dev/null
+	if nft -f "$RULES" >/dev/null 2>&1; then
+		log "限速规则已生效"
+		return 0
+	fi
+	log "限速规则加载失败"
+	return 1
+}
+
+case "$1" in
+	apply)
+		apply_rules
+		;;
+	watch)
+		apply_rules
+		while true; do
+			sleep "$REFRESH"
+			generate > "$RULES.watch" 2>/dev/null || continue
+			if ! cmp -s "$RULES.watch" "$RULES"; then
+				mv "$RULES.watch" "$RULES"
+				apply_rules
+			else
+				rm -f "$RULES.watch"
+			fi
+		done
+		;;
+	status)
+		nft list table inet fwx_qos 2>&1
+		;;
+	clear)
+		nft delete table inet fwx_qos 2>/dev/null
+		rm -f "$RULES"
+		log "限速规则已清除"
+		;;
+	*)
+		echo "usage: $0 {apply|watch|status|clear}"
+		exit 1
+		;;
+esac
